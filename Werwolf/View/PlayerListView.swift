@@ -5,9 +5,8 @@ import UniformTypeIdentifiers
 /// View zur Verwaltung der Spieler (hinzufügen, umbenennen, sortieren, löschen)
 struct PlayerListView: View {
     @Bindable var model: GameConfigViewModel
-    @State private var showDeleteAlert = false
-    @State private var playerToDelete: Player? = nil
-    
+    @FocusState private var focusedPlayerId: UUID?
+
     var body: some View {
         VStack(spacing: 24) {
             // Die große Karte
@@ -21,30 +20,35 @@ struct PlayerListView: View {
                             Image(systemName: "person.fill")
                                 .foregroundColor(Color("DarkBlue"))
                                 .font(.title2)
-                            TextField("Name", text: Binding(
-                                get: { player.name },
-                                set: { newName in
-                                    model.updatePlayerName(playerId: player.id, newName: newName)
-                                })
+                            SelectAllTextField(
+                                text: Binding(
+                                    get: { player.name },
+                                    set: { newName in
+                                        model.updatePlayerName(playerId: player.id, newName: newName)
+                                    }
+                                ),
+                                placeholder: "Name",
+                                isFocused: Binding(
+                                    get: { focusedPlayerId == player.id },
+                                    set: { isFocused in
+                                        if isFocused {
+                                            focusedPlayerId = player.id
+                                        } else if focusedPlayerId == player.id {
+                                            focusedPlayerId = nil
+                                        }
+                                    }
+                                )
                             )
-                            .textFieldStyle(.plain)
-                            .font(.body)
                             .tint(.darkBlue)
-                            .foregroundColor(Color("DarkBlue"))
-                            .disableAutocorrection(true)
-                            .autocapitalization(.words)
+                            .focused($focusedPlayerId, equals: player.id)
                             Spacer()
-                            Button(action: {
-                                playerToDelete = player
-                                showDeleteAlert = true
-                            }) {
-                                Image(systemName: "trash")
-                                    .foregroundColor(.red)
-                            }
                         }
                         .padding(.vertical, 8)
                     }
                     .onMove(perform: model.movePlayers)
+                    .onDelete { indexSet in
+                        model.removePlayers(at: indexSet)
+                    }
                 }
                 .listStyle(.plain)
                 .colorScheme(.light)
@@ -59,6 +63,9 @@ struct PlayerListView: View {
             
             Button(action: {
                 model.addPlayer()
+                if let lastId = model.players.last?.id {
+                    focusedPlayerId = lastId
+                }
             }) {
                 HStack {
                     Image(systemName: "plus.circle.fill")
@@ -76,20 +83,50 @@ struct PlayerListView: View {
         }
         .navigationTitle("Spieler verwalten")
         .background(Color.darkBlue.ignoresSafeArea())
-        .alert(isPresented: $showDeleteAlert) {
-            Alert(
-                title: Text("Spieler entfernen"),
-                message: Text("Möchtest du wirklich \(playerToDelete?.name ?? "") entfernen?"),
-                primaryButton: .destructive(Text("Entfernen")) {
-                    if let player = playerToDelete, let idx = model.players.firstIndex(where: { $0.id == player.id }) {
-                        model.removePlayers(at: IndexSet(integer: idx))
-                    }
-                    playerToDelete = nil
-                },
-                secondaryButton: .cancel {
-                    playerToDelete = nil
-                }
-            )
+    }
+}
+
+struct SelectAllTextField: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    @Binding var isFocused: Bool
+
+    func makeUIView(context: Context) -> UITextField {
+        let textField = UITextField()
+        textField.placeholder = placeholder
+        textField.delegate = context.coordinator
+        textField.autocapitalizationType = .words
+        textField.autocorrectionType = .no
+        textField.font = UIFont.preferredFont(forTextStyle: .body)
+        textField.textColor = UIColor(named: "DarkBlue")
+        return textField
+    }
+
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        uiView.text = text
+        if isFocused && !uiView.isFirstResponder {
+            uiView.becomeFirstResponder()
+            uiView.selectAll(nil)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+    class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: SelectAllTextField
+        init(parent: SelectAllTextField) {
+            self.parent = parent
+        }
+        func textFieldDidChangeSelection(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.isFocused = false
+        }
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.isFocused = true
+            textField.selectAll(nil)
         }
     }
 }

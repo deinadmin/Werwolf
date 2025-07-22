@@ -26,10 +26,31 @@ final class GameConfigViewModel {
     /// Fügt einen neuen Spieler hinzu
     func addPlayer() {
         print("[GameConfigViewModel] Spieler hinzufügen, aktuell: \(players.count)")
-        let nextNumber = players.count + 1
-        let newPlayer = Player(name: "Spieler \(nextNumber)")
-        players.append(newPlayer)
-        print("[GameConfigViewModel] Spieler hinzugefügt, neu: \(players.count)")
+        // Gather all currently used numbers
+        let usedNumbers = Set(
+            players.compactMap { player -> Int? in
+                let prefix = "Spieler "
+                if player.name.hasPrefix(prefix) {
+                    let rest = player.name.dropFirst(prefix.count)
+                    return Int(rest.trimmingCharacters(in: .whitespaces))
+                }
+                return nil
+            }
+        )
+        // Find the lowest available number
+        var nextNumber = 1
+        while usedNumbers.contains(nextNumber) {
+            nextNumber += 1
+        }
+        let newName = "Spieler \(nextNumber)"
+        // Prevent duplicate name (defensive, should not occur due to logic above)
+        if !players.contains(where: { $0.name == newName }) {
+            let newPlayer = Player(name: newName)
+            players.append(newPlayer)
+            print("[GameConfigViewModel] Spieler hinzugefügt, neu: \(players.count)")
+        } else {
+            print("[GameConfigViewModel] FEHLER: Spieler mit Name bereits vorhanden: \(newName)")
+        }
         // Rolle wird automatisch synchronisiert
     }
 
@@ -104,5 +125,41 @@ final class GameConfigViewModel {
         print("[GameConfigViewModel] Dorfbewohner gesetzt auf: \(newVillagerCount)")
         // Falls zu viele Spezialrollen, werden Dorfbewohner auf 0 gesetzt
         // (UI verhindert das Hinzufügen von zu vielen Spezialrollen)
+    }
+
+    // MARK: - Game Start
+    /// Creates players with assigned roles and returns them for starting a game
+    func createPlayersWithRoles() -> [Player] {
+        // Create a pool of roles based on the current configuration
+        var rolePool: [Role] = []
+        
+        for (role, count) in roleCounts {
+            for _ in 0..<count {
+                rolePool.append(role)
+            }
+        }
+        
+        // Shuffle the roles randomly
+        rolePool.shuffle()
+        
+        // Assign roles to players
+        var gameReady: [Player] = []
+        for (index, player) in players.enumerated() {
+            var playerCopy = player
+            if index < rolePool.count {
+                playerCopy.role = rolePool[index]
+            } else {
+                // Fallback: assign villager if something goes wrong
+                playerCopy.role = .villager
+            }
+            gameReady.append(playerCopy)
+        }
+        
+        return gameReady
+    }
+
+    /// Validates if the game can be started
+    var canStartGame: Bool {
+        return players.count >= 2 && totalAssignedRoles() == players.count
     }
 }
